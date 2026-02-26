@@ -1,0 +1,91 @@
+name: BrightData Scraping via IssueOps
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  scrape_job:
+    # 'scraping-request' ラベルが付与されたIssueでのみ実行する
+    if: contains(github.event.issue.labels.*.name, 'scraping-request')
+    runs-on: ubuntu-latest
+    
+    # 6時間のタイムアウト制限（デフォルトは360分ですが明示的に記述）
+    timeout-minutes: 360
+
+    steps:
+      # 1. リポジトリのチェックアウト
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Issueの本文から「開始行」と「終了行」を抽出
+      # （※GitHub Pages側からIssueを作成する際、特定のフォーマットで本文を入力する前提）
+      - name: Parse Issue Body for Parameters
+        id: parse_params
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body;
+            // 例: 本文内に "START_ROW: 1", "END_ROW: 1000" のように記載されていると想定
+            const startMatch = body.match(/START_ROW:\s*(\d+)/);
+            const endMatch = body.match(/END_ROW:\s*(\d+)/);
+            
+            const startRow = startMatch ? startMatch[1] : 1;
+            const endRow = endMatch ? endMatch[1] : 1000;
+            
+            core.setOutput("start_row", startRow);
+            core.setOutput("end_row", endRow);
+
+      # 3. Python環境のセットアップ
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # 4. 依存ライブラリのインストール
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 5. スクレイピング処理の実行（バッチ処理・途中保存対応のPythonスクリプト）
+      - name: Run Scraping Script
+        env:
+          # BrightDataのAPIキーなどはGitHub Secretsで管理し、安全に渡す
+          BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
+          START_ROW: ${{ steps.parse_params.outputs.start_row }}
+          END_ROW: ${{ steps.parse_params.outputs.end_row }}
+        run: |
+          # 処理途中のデータを一時保存するためのディレクトリを作成
+          mkdir -p output_data
+          python src/scraper.py
+
+      # 6. 取得データの保存（アーティファクトへのアップロード）
+      # ※処理がエラーやタイムアウトで終了しても、常にアップロードを試みる
+      - name: Upload Scraped Data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraping-results-${{ github.event.issue.number }}
+          path: output_data/
+          retention-days: 7 # データの保持期間
+
+      # 7. Issueへの完了通知とクローズ
+      - name: Close Issue and Notify
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ スクレイピング処理が正常に完了しました。Actionsの実行ログ画面からデータをダウンロードできます。'
+            });
+            github.rest.issues.update({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'closed'
+            });
