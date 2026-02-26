@@ -36,6 +36,16 @@ Pythonの `pip` などのパッケージをインストールした状態をGitH
 
 * **メリット:** スクレイピングに応用する場合、「カテゴリA」「カテゴリB」「カテゴリC」といった異なる条件のジョブを**並行して同時に走らせる**ことができ、全体の処理時間を劇的に短縮させるテクニックとして有効です。
 
+### 6.webサイト(公式,quiita,zenn,classmethod)
+
+https://docs.github.com/ja/actions
+
+https://zenn.dev/
+
+https://qiita.com/
+
+https://dev.classmethod.jp/
+
 ---
 
 これらの機能のうち、特にスクレイピングの安定稼働に役立つ **`concurrency`（多重起動防止）** や、テスト実行に便利な **`workflow_dispatch`** を、先ほど作成した `.yml` ファイルに追記してアップデートしましょうか？
